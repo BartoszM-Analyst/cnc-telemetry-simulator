@@ -1,0 +1,4 @@
+plant_id,organization_id,plant_code,name,timezone
+1,1,plant-1,Plant 1,Europe/Warsaw
+2,2,plant-2,Plant 2,Europe/Warsaw
+3,2,plant-3,Plant 3,Europe/Warsaw

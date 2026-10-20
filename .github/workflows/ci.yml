@@ -1,0 +1,34 @@
+name: CI
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  generator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Generate data
+        run: python generator/generate.py out
+      - name: Output matches the sample (determinism)
+        run: |
+          grep -F "$(sed -n 2p sample/machine_telemetry_2026-10-14.csv)" out/csv/machine_telemetry.csv > /dev/null
+          test "$(wc -l < out/csv/machines.csv)" -eq 7
+          test "$(wc -l < out/csv/alarm_events.csv)" -gt 100
+  load:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: postgres }
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: python generator/generate.py out
+      - run: PGPASSWORD=postgres psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f out/seed.sql
+      - run: PGPASSWORD=postgres psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f sql/shift_utilization.sql
+      - run: PGPASSWORD=postgres psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f sql/alarm_summary.sql

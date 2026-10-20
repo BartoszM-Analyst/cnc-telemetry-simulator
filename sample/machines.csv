@@ -1,0 +1,7 @@
+machine_id,plant_id,machine_code,name,machine_type,max_spindle_rpm
+1,1,CNC-01,Lathe 1,lathe,4000
+2,1,CNC-02,Lathe 2,lathe,6000
+3,1,CNC-03,Mill 1,mill,8100
+4,2,CNC-04,Mill 2,mill,12000
+5,2,CNC-05,Lathe 3,lathe,4500
+6,3,CNC-06,Lathe 4,lathe,3500

@@ -1,0 +1,7 @@
+# wygenerowane dane (odtwarzalne: make data)
+data/
+*.sql.gz
+__pycache__/
+.venv/
+.env
+.DS_Store

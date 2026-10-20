@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CNC Telemetry Simulator: Live Demo</title>
+<meta name="description" content="Live replay of a simulated CNC shop floor: machine states, spindle load, alarms and connection gaps.">
+<style>
+:root{
+  --bg:#0e1116; --panel:#161b22; --panel2:#1c232c; --line:#2a323d; --text:#e6edf3; --mute:#8b98a7;
+  --active:#2ea043; --ready:#388bfd; --stopped:#8b98a7; --hold:#d29922; --int:#f85149; --off:#30363d; --fault:#f85149;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:#58a6ff;text-decoration:none} a:hover{text-decoration:underline}
+.wrap{max-width:1200px;margin:0 auto;padding:16px}
+header{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:center;justify-content:space-between;margin-bottom:12px}
+h1{font-size:20px;margin:0} h1 small{display:block;font-size:12px;font-weight:400;color:var(--mute);margin-top:2px}
+.clock{font:600 28px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.02em}
+.clock small{font:12px system-ui;color:var(--mute);display:block;letter-spacing:0;margin-top:4px}
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:12px}
+button,select{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font:inherit;cursor:pointer}
+button:hover,select:hover{border-color:#4b5663}
+input[type=range]{flex:1;min-width:160px;accent-color:#58a6ff}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:12px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.kpi b{display:block;font-size:24px;font-variant-numeric:tabular-nums} .kpi span{color:var(--mute);font-size:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:10px;margin-bottom:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;border-left-width:4px}
+.card h3{margin:0;font-size:15px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.card .site{color:var(--mute);font-size:12px;margin-bottom:8px}
+.pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;color:#fff;white-space:nowrap}
+.row{display:grid;grid-template-columns:62px 1fr 92px;gap:8px;align-items:center;margin:5px 0;color:var(--mute);font-size:12px}
+.row em{font-style:normal;color:var(--text);text-align:right;font-variant-numeric:tabular-nums}
+.bar{height:8px;background:var(--panel2);border-radius:4px;overflow:hidden}.bar i{display:block;height:100%;background:#58a6ff;width:0}
+.meta{display:flex;justify-content:space-between;margin-top:8px;font-size:12px;color:var(--mute)} .meta b{color:var(--text);font-variant-numeric:tabular-nums}
+.alarm{margin-top:8px;padding:6px 8px;border-radius:6px;font-size:12px;background:rgba(248,81,73,.15);color:#ffa198;border:1px solid rgba(248,81,73,.4)}
+.alarm.warn{background:rgba(210,153,34,.15);color:#e3b341;border-color:rgba(210,153,34,.4)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px}
+.panel h2{font-size:14px;margin:0 0 8px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--mute);font-weight:400}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+#tl{position:relative}
+canvas{display:block;width:100%}
+#playhead{position:absolute;top:0;bottom:0;width:2px;background:#fff;opacity:.85;pointer-events:none}
+#feed{list-style:none;margin:0;padding:0;font-size:13px;max-height:230px;overflow:auto}
+#feed li{display:flex;gap:10px;padding:5px 0;border-top:1px solid var(--line)} #feed li:first-child{border-top:0}
+#feed time{font:12px ui-monospace,Menlo,Consolas,monospace;color:var(--mute);min-width:62px}
+.sev{font-size:11px;font-weight:700;min-width:62px} .sev.FAULT{color:#ff7b72} .sev.WARNING{color:#e3b341}
+footer{color:var(--mute);font-size:12px;text-align:center;padding:8px 0 24px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>CNC Telemetry Simulator<small>Live replay of simulated data · 6 machines · 3 plants · <a href="https://github.com/BartoszM-Analyst/cnc-telemetry-simulator">source on GitHub</a></small></h1>
+    <div class="clock"><span id="clock">00:00:00</span><small id="date">Wed 14 Oct 2026 · Europe/Warsaw</small></div>
+  </header>
+
+  <div class="controls">
+    <button id="play" aria-label="Play or pause">⏸ Pause</button>
+    <label>Speed <select id="speed">
+      <option value="60">60× (1 min = 1 s)</option><option value="300">300×</option>
+      <option value="900" selected>900×</option><option value="3600">3600× (1 h = 1 s)</option></select></label>
+    <input id="scrub" type="range" min="0" max="86399" step="1" aria-label="Time of day">
+    <button id="jump">Jump to shift start</button>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><b id="k-run">–</b><span>machines cutting now</span></div>
+    <div class="kpi"><b id="k-util">–</b><span>utilization in shift so far (06–14)</span></div>
+    <div class="kpi"><b id="k-parts">–</b><span>parts made today</span></div>
+    <div class="kpi"><b id="k-fault">–</b><span>active faults</span></div>
+  </div>
+
+  <div class="grid" id="cards"></div>
+
+  <div class="panel">
+    <h2>Daily timeline
+      <span class="legend" id="legend"></span></h2>
+    <div id="tl"><canvas id="cv"></canvas><div id="playhead"></div></div>
+  </div>
+
+  <div class="panel">
+    <h2>Alarm log</h2>
+    <ul id="feed"></ul>
+  </div>
+
+  <footer>All data is synthetic, produced by <code>generator/generate.py</code>. Gaps in the timeline are simulated gateway outages (no data for more than 60 s).</footer>
+</div>
+<script src="demo-data.js"></script>
+<script>
+(function(){
+"use strict";
+var D = window.DEMO, DAY = 86400, GAP = 60;
+// state code -> label/colour. codes: 1 off, 2 active, 3 ready, 4 stopped, 5 feed hold, 6 interrupted (+10 = manual mode); 0 = no data
+var ST = {0:["NO DATA","#0e1116"],1:["OFF","#30363d"],2:["ACTIVE","#2ea043"],3:["READY","#388bfd"],4:["STOPPED","#8b98a7"],5:["FEED HOLD","#d29922"],6:["INTERRUPTED","#f85149"]};
+function stateOf(c){ return ST[c>=10?c-10:c]; }
+function hms(s){ s=Math.floor(s); var h=Math.floor(s/3600)%24,m=Math.floor(s/60)%60,x=s%60; return [h,m,x].map(function(n){return String(n).padStart(2,"0")}).join(":"); }
+function hm(s){ return hms(s).slice(0,5); }
+
+// ---- precompute per machine: segments, alarm events ----
+D.machines.forEach(function(m){
+  var seg=[], n=m.t.length;
+  function push(a,b,c){ if(b<=a) return; var l=seg[seg.length-1]; if(l && l[2]===c && l[1]===a) l[1]=b; else seg.push([a,b,c]); }
+  if(n && m.t[0]>0) push(0,m.t[0],0);
+  for(var i=0;i<n;i++){
+    var end = i+1<n ? m.t[i+1] : m.t[i]+GAP, d = Math.min(end-m.t[i], GAP);
+    push(m.t[i], m.t[i]+d, m.ex[i]>=10?m.ex[i]-10:m.ex[i]);
+    if(end-m.t[i]>GAP) push(m.t[i]+d, end, 0);
+  }
+  if(seg.length && seg[seg.length-1][1]<DAY) push(seg[seg.length-1][1], DAY, 0);
+  m.seg=seg;
+  m.events=[]; var prev={};
+  for(var j=0;j<n;j++){ var cur={}, s=m.al[j]; if(s) s.split(",").forEach(function(k){cur[k]=1;});
+    for(var k in cur) if(!prev[k]) m.events.push({t:m.t[j],m:m.name,a:D.alarms[k]});
+    prev=cur; }
+  var f=0; for(var q=0;q<n;q++) if(m.ex[q]!==1){ f=m.pc[q]; break; } m.pc0=f;
+});
+var allEvents=[].concat.apply([],D.machines.map(function(m){return m.events;})).sort(function(a,b){return a.t-b.t;});
+
+function idxAt(m,T){ var lo=0,hi=m.t.length-1,r=-1; while(lo<=hi){var mid=(lo+hi)>>1; if(m.t[mid]<=T){r=mid;lo=mid+1;}else hi=mid-1;} return r; }
+function activeSecs(m,a,b){ var s=0; for(var i=0;i<m.seg.length;i++){var g=m.seg[i]; if(g[1]<=a) continue; if(g[0]>=b) break; if(g[2]===2) s+=Math.min(g[1],b)-Math.max(g[0],a);} return s; }
+
+// ---- DOM ----
+var $=function(id){return document.getElementById(id);};
+var cards=$("cards");
+D.machines.forEach(function(m){
+  var el=document.createElement("div"); el.className="card"; el.id="c-"+m.id.replace(/\W/g,"_");
+  el.innerHTML='<h3><span>'+m.name+'</span><span class="pill">–</span></h3><div class="site">'+m.site+' · <span class="prog">–</span></div>'+
+   '<div class="row">Spindle<div class="bar"><i class="b-rpm"></i></div><em class="v-rpm">–</em></div>'+
+   '<div class="row">Load<div class="bar"><i class="b-load"></i></div><em class="v-load">–</em></div>'+
+   '<div class="row">Feed<div class="bar"><i class="b-feed"></i></div><em class="v-feed">–</em></div>'+
+   '<div class="meta"><span>Mode <b class="v-mode">–</b></span><span>Parts today <b class="v-parts">–</b></span></div><div class="al"></div>';
+  cards.appendChild(el); m.el=el;
+});
+$("legend").innerHTML=[1,2,3,4,5,6,0].map(function(c){return '<span><i style="background:'+ST[c][1]+(c===0?';border:1px solid #4b5663':'')+'"></i>'+ST[c][0]+'</span>';}).join("");
+
+// ---- timeline canvas ----
+var cv=$("cv"), ctx=cv.getContext("2d"), ROWH=26, PAD=96, TOP=18;
+function drawTimeline(){
+  var dpr=window.devicePixelRatio||1, W=$("tl").clientWidth, H=TOP+D.machines.length*ROWH+4;
+  cv.width=W*dpr; cv.height=H*dpr; cv.style.height=H+"px"; ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,W,H); var pw=W-PAD, x=function(s){return PAD+s/DAY*pw;};
+  ctx.font="11px system-ui"; ctx.fillStyle="#8b98a7"; ctx.textBaseline="top";
+  for(var h=0;h<=24;h+=(W<600?6:3)){ var xx=x(h*3600); ctx.fillText(String(h).padStart(2,"0")+":00",Math.min(xx-14,W-30),0); ctx.fillStyle="rgba(139,152,167,.15)"; ctx.fillRect(xx,TOP-2,1,H); ctx.fillStyle="#8b98a7"; }
+  D.machines.forEach(function(m,i){
+    var y=TOP+i*ROWH; ctx.fillStyle="#e6edf3"; ctx.textBaseline="middle"; ctx.fillText(m.name,0,y+ROWH/2-3); ctx.textBaseline="top";
+    m.seg.forEach(function(g){ var c=ST[g[2]][1]; if(g[2]===0){ ctx.fillStyle="#1a2028"; } else ctx.fillStyle=c;
+      ctx.fillRect(x(g[0]),y,Math.max(x(g[1])-x(g[0]),0.6),ROWH-6);
+      if(g[2]===0 && g[1]-g[0]>GAP){ ctx.strokeStyle="#f0883e"; ctx.globalAlpha=.55; ctx.beginPath(); ctx.moveTo(x(g[0]),y+ROWH/2-3); ctx.lineTo(x(g[1]),y+ROWH/2-3); ctx.stroke(); ctx.globalAlpha=1; } });
+    m.events.forEach(function(e){ if(e.a.sev==="FAULT"){ ctx.fillStyle="#fff"; ctx.fillRect(x(e.t)-.5,y,1.5,ROWH-6); } });
+  });
+  tlGeom={pad:PAD,pw:pw};
+}
+var tlGeom={pad:PAD,pw:600};
+
+// ---- clock/state ----
+var T=5.75*3600, playing=true, speed=900, last=performance.now();
+function render(){
+  $("clock").textContent=hms(T); $("scrub").value=Math.floor(T);
+  $("playhead").style.left=(tlGeom.pad+T/DAY*tlGeom.pw)+"px";
+  var run=0, parts=0, faults=0, actS=0, planS=0, a=6*3600, b=Math.min(T,14*3600);
+  D.machines.forEach(function(m){
+    var i=idxAt(m,T), live=i>=0 && T-m.t[i]<=GAP, c=live?m.ex[i]:0, base=c>=10?c-10:c, s=ST[base], e=m.el;
+    e.style.borderLeftColor=s[1]===ST[0][1]?"#f0883e":s[1];
+    var pill=e.querySelector(".pill"); pill.textContent=live?s[0]:"NO DATA"; pill.style.background=live?s[1]:"#9a5b1f";
+    var on=live&&base>=2;
+    e.querySelector(".prog").textContent=on?D.programs[m.prog[i]]:(live?"machine off":"gateway offline");
+    function set(k,val,frac,unit){ e.querySelector(".v-"+k).textContent=on?val+unit:"–"; e.querySelector(".b-"+k).style.width=(on?Math.min(100,frac*100):0)+"%"; }
+    set("rpm",on?m.rpm[i]:0,on?m.rpm[i]/m.maxrpm:0," rpm"); set("load",on?m.load[i]:0,on?m.load[i]/100:0,"%"); set("feed",on?m.feed[i]:0,on?m.feed[i]/1200:0," mm/min");
+    e.querySelector(".v-mode").textContent=on?(c>=10?"MANUAL":"AUTO"):"–";
+    var p=on?Math.max(0,m.pc[i]-m.pc0):null; if(on) m.lastParts=p;
+    e.querySelector(".v-parts").textContent=m.lastParts==null?"–":m.lastParts; parts+=m.lastParts||0;
+    var al=e.querySelector(".al"), html="";
+    if(on&&m.al[i]) m.al[i].split(",").forEach(function(k){ var d=D.alarms[k]; if(d.sev==="FAULT") faults++; html+='<div class="alarm'+(d.sev==="WARNING"?" warn":"")+'">'+d.sev+" "+d.code+" · "+d.msg+"</div>"; });
+    al.innerHTML=html; if(base===2&&live) run++;
+    if(b>a){ actS+=activeSecs(m,a,b); planS+=b-a; }
+  });
+  $("k-run").textContent=run+" / "+D.machines.length; $("k-fault").textContent=faults; $("k-parts").textContent=parts;
+  $("k-util").textContent=planS?Math.round(100*actS/planS)+"%":"before shift";
+  var rows=[]; for(var k=allEvents.length-1;k>=0&&rows.length<12;k--) if(allEvents[k].t<=T) rows.push(allEvents[k]);
+  $("feed").innerHTML=rows.length?rows.map(function(r){return '<li><time>'+hm(r.t)+'</time><span class="sev '+r.a.sev+'">'+r.a.sev+'</span><span><b>'+r.m+'</b> · '+r.a.code+' '+r.a.msg+'</span></li>';}).join(""):'<li style="color:var(--mute)">No alarms yet today</li>';
+}
+function tick(now){ var dt=(now-last)/1000; last=now; if(playing){ T+=dt*speed; if(T>=DAY) T-=DAY; } render(); requestAnimationFrame(tick); }
+
+$("play").onclick=function(){ playing=!playing; this.textContent=playing?"⏸ Pause":"▶ Play"; };
+$("speed").onchange=function(){ speed=+this.value; };
+$("scrub").oninput=function(){ T=+this.value; };
+$("jump").onclick=function(){ T=5.9*3600; };
+window.addEventListener("resize",drawTimeline);
+$("tl").addEventListener("click",function(e){ var r=cv.getBoundingClientRect(), x=e.clientX-r.left-tlGeom.pad; if(x>=0) T=Math.min(DAY-1,x/tlGeom.pw*DAY); });
+drawTimeline(); requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>
