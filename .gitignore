@@ -5,3 +5,15 @@ __pycache__/
 .venv/
 .env
 .DS_Store
+
+# AWS / Terraform (never commit state, variables with personal data, or device certificates)
+.terraform/
+.terraform.lock.hcl.bak
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+*.auto.tfvars
+crash.log
+aws/certs/
+*.pem
+*.key
